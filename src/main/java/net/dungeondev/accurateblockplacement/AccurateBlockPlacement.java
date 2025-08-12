@@ -49,11 +49,31 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Bukkit/Spigot plugin that implements the Carpet Accurate Block Placement protocol for Spigot/Paper servers.
+ * <p>
+ * This plugin listens for client packets via ProtocolLib to support Tweakeroo's Flexible Block Placement and
+ * Litematica's EasyPlace (v2), adjusting placed block states to match the client's intended orientation and settings.
+ * </p>
+ * <p>
+ * Runtime behavior:
+ * <ul>
+ *   <li>Registers ProtocolLib listeners for {@code USE_ITEM} and {@code CUSTOM_PAYLOAD} (carpet:hello) packets.</li>
+ *   <li>Tracks per-player placement metadata during a placement attempt.</li>
+ *   <li>Intercepts {@link BlockPlaceEvent} to apply accurate orientation rules where possible.</li>
+ * </ul>
+ * </p>
+ *
+ * Dependencies: ProtocolLib, Spigot/Paper 1.19.x, Java 17.
+ */
 public class AccurateBlockPlacement extends JavaPlugin implements Listener
 {
     private ProtocolManager protocolManager;
 
     private Map<Player, PacketData> playerPacketDataHashMap = new HashMap<>();
+    /**
+     * Plugin entrypoint. Registers ProtocolLib listeners and Bukkit event listeners.
+     */
     @Override public void onEnable() {
 	getLogger().info("AccurateBlockPlacement loaded!");
 	protocolManager = ProtocolLibrary.getProtocolManager();
@@ -71,6 +91,12 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
     }
 
 
+    /**
+     * Sends a server->client handshake on join to announce Accurate Block Placement support to compatible mods.
+     * <p>
+     * Channel: {@code carpet:hello}. Payload: VarInt 69 and the identifier {@code "SPIGOT-ABP"}.
+     * </p>
+     */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
 	PacketContainer packet = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
@@ -86,11 +112,21 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 	catch (IOException | InvocationTargetException ignored) {}
     }
 
+    /**
+     * Cleans up any per-player cached placement metadata when a player disconnects.
+     */
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
 	playerPacketDataHashMap.remove(event.getPlayer());
     }
 
+    /**
+     * Applies accurate placement rules to a block placement if a corresponding placement packet was captured.
+     * <p>
+     * If the cached block position differs from the placed block, the cache is discarded and the event proceeds
+     * unmodified; otherwise, the event is adjusted according to the protocol value.
+     * </p>
+     */
     @EventHandler (priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBuildEvent(BlockPlaceEvent event) {
 	Player player = event.getPlayer();
@@ -309,8 +345,8 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 	    PacketContainer rulePacket = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
 	    packet.getMinecraftKeys().write(0,new MinecraftKey("carpet", "hello"));
 	    NbtCompound abpRule = NbtFactory.ofCompound("Rules", List.of(NbtFactory.of("Value", "true"),
-									       NbtFactory.of("Manager", "carpet"),
-									       NbtFactory.of("Rule", "accurateBlockPlacement")));
+						       NbtFactory.of("Manager", "carpet"),
+						       NbtFactory.of("Rule", "accurateBlockPlacement")));
 	    ByteArrayOutputStream rawData = new ByteArrayOutputStream();
 	    DataOutputStream outputStream = new DataOutputStream(rawData);
 	    StreamSerializer.getDefault().serializeVarInt(outputStream, 1);

@@ -9,7 +9,8 @@ repositories {
     mavenCentral()
     maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
     maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
-    maven { url "https://repo.dmulloy2.net/repository/public/" }
+    maven { url 'https://repo.codemc.org/repository/maven-public/' }
+    maven { url "https://repo.dmulloy2.net/repository/maven-public/" }
 }
 
 dependencies {
@@ -29,4 +30,25 @@ java {
 
 test {
     useJUnitPlatform()
+}
+
+// Configure Javadoc to be resilient in environments without access to external repos
+// and to not fail the build on warnings.
+tasks.withType(Javadoc) {
+    failOnError = false
+    options.addStringOption('Xdoclint:none', '-quiet')
+    // Avoid resolving external dependencies during doc generation
+    classpath = files(sourceSets.main.output)
+}
+
+// Custom task to generate Javadoc without compiling or resolving external dependencies
+tasks.register('localJavadoc', Javadoc) {
+    description = 'Generates Javadoc without requiring external dependencies (for CI or offline use).'
+    group = 'documentation'
+    source = sourceSets.main.allJava
+    classpath = files()
+    destinationDir = file("${buildDir}/docs/localJavadoc")
+    options.addStringOption('Xdoclint:none', '-quiet')
+    failOnError = false
+    dependsOn = []
 }
