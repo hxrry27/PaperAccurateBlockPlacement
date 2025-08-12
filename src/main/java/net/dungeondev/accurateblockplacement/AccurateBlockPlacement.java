@@ -43,7 +43,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -83,7 +82,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 	    packet.getModifier().write(1, MinecraftReflection.getPacketDataSerializer(Unpooled.wrappedBuffer(rawData.toByteArray())));
 	    protocolManager.sendServerPacket(event.getPlayer(), packet);
 	}
-	catch (IOException | InvocationTargetException ignored) {}
+	catch (IOException ignored) {}
     }
 
     @EventHandler
@@ -309,15 +308,15 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 	    PacketContainer rulePacket = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
 	    packet.getMinecraftKeys().write(0,new MinecraftKey("carpet", "hello"));
 	    NbtCompound abpRule = NbtFactory.ofCompound("Rules", List.of(NbtFactory.of("Value", "true"),
-									       NbtFactory.of("Manager", "carpet"),
-									       NbtFactory.of("Rule", "accurateBlockPlacement")));
+						       NbtFactory.of("Manager", "carpet"),
+						       NbtFactory.of("Rule", "accurateBlockPlacement")));
 	    ByteArrayOutputStream rawData = new ByteArrayOutputStream();
 	    DataOutputStream outputStream = new DataOutputStream(rawData);
 	    StreamSerializer.getDefault().serializeVarInt(outputStream, 1);
 	    StreamSerializer.getDefault().serializeCompound(outputStream, abpRule);
 	    rulePacket.getModifier().write(1, MinecraftReflection.getPacketDataSerializer(Unpooled.wrappedBuffer(rawData.toByteArray())));
 	    protocolManager.sendServerPacket(event.getPlayer(), rulePacket);
-	} catch (IOException | InvocationTargetException ignored) {}
+	} catch (IOException ignored) {}
     }
 
 }

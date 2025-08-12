@@ -3,5 +3,5 @@ description: Implements the Carpet AccurateBlockPlacement protocol on Spigot.
 version: 1.0.1
 author: DungeonDev
 main: net.dungeondev.accurateblockplacement.AccurateBlockPlacement
-api-version: 1.19
+api-version: 1.21
 depend: [ProtocolLib]

@@ -8,19 +8,21 @@ version '1.0.1-SNAPSHOT'
 repositories {
     mavenCentral()
     maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
-    maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
-    maven { url "https://repo.dmulloy2.net/repository/public/" }
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+    maven { url "https://repo.codemc.org/repository/maven-public/" }
+    maven { url 'https://jitpack.io' }
+    // maven { url "https://repo.dmulloy2.net/repository/public/" }
 }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
-    compileOnly 'org.spigotmc:spigot-api:1.19.1-R0.1-SNAPSHOT'
-    compileOnly group: 'io.netty', name: 'netty-all', version: '4.1.24.Final'
-    compileOnly group: "com.comphenix.protocol", name: "ProtocolLib", version: "4.8.0";
+    compileOnly 'io.papermc.paper:paper-api:1.21.7-R0.1-SNAPSHOT'
+    compileOnly group: 'io.netty', name: 'netty-all', version: '4.1.110.Final'
+    compileOnly group: 'com.github.dmulloy2', name: 'ProtocolLib', version: '5.2.0'
 }
 
-def targetJavaVersion = 17
+def targetJavaVersion = 21
 java {
     def javaVersion = JavaVersion.toVersion(targetJavaVersion)
     sourceCompatibility = javaVersion
