@@ -38,7 +38,6 @@ import org.bukkit.util.Vector;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,19 +49,20 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 
     private Map<Player, PacketData> playerPacketDataHashMap = new HashMap<>();
     @Override public void onEnable() {
-	getLogger().info("AccurateBlockPlacement loaded!");
-	protocolManager = ProtocolLibrary.getProtocolManager();
-	protocolManager.addPacketListener(new PacketAdapter(this, ListenerPriority.NORMAL, PacketType.Play.Client.USE_ITEM) {
-	    @Override public void onPacketReceiving(final PacketEvent event) {
-		onBlockBuildPacket(event);
-	    }
-	});
-	protocolManager.addPacketListener(new PacketAdapter(this, ListenerPriority.NORMAL, PacketType.Play.Client.CUSTOM_PAYLOAD) {
-	    @Override public void onPacketReceiving(final PacketEvent event) {
-		onCustomPayload(event);
-	    }
-	});
-	getServer().getPluginManager().registerEvents(this, this);
+		getLogger().info("AccurateBlockPlacement loaded!");
+		protocolManager = ProtocolLibrary.getProtocolManager();
+
+		protocolManager.addPacketListener(new PacketAdapter(this, ListenerPriority.	LOWEST, PacketType.Play.Client.USE_ITEM_ON) {
+			@Override public void onPacketReceiving(final PacketEvent event) {
+			onBlockBuildPacket(event);
+			}
+		});
+		protocolManager.addPacketListener(new PacketAdapter(this, ListenerPriority.NORMAL, PacketType.Play.Client.CUSTOM_PAYLOAD) {
+			@Override public void onPacketReceiving(final PacketEvent event) {
+			onCustomPayload(event);
+			}
+		});
+		getServer().getPluginManager().registerEvents(this, this);
     }
 
 
@@ -96,236 +96,265 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
     }
 
     @EventHandler (priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBuildEvent(BlockPlaceEvent event) {
-	Player player = event.getPlayer();
-	PacketData packetData = playerPacketDataHashMap.get(player);
-	if (packetData == null) {
-	    return;
+	public void onBuildEvent(BlockPlaceEvent event) {
+		Player player = event.getPlayer();
+		PacketData packetData = playerPacketDataHashMap.get(player);
+		
+		if (packetData == null) {
+			return;
+		}
+		
+		BlockPosition packetBlock = packetData.block();
+		Block block = event.getBlock();
+		Block clickedBlock = event.getBlockAgainst();
+		
+		// Check if this is the right placement - either exact match OR placed adjacent to clicked
+		boolean positionMatches = 
+			(packetBlock.getX() == block.getX() && packetBlock.getY() == block.getY() && packetBlock.getZ() == block.getZ()) ||
+			(packetBlock.getX() == clickedBlock.getX() && packetBlock.getY() == clickedBlock.getY() && packetBlock.getZ() == clickedBlock.getZ());
+		
+		if (!positionMatches) {
+			getLogger().info("Position mismatch: packet=" + packetBlock + " placed=" + block.getLocation() + " clicked=" + clickedBlock.getLocation());
+			playerPacketDataHashMap.remove(player);
+			return;
+		}
+		
+		getLogger().info("Accurate placement: " + block.getType() + " protocol=" + packetData.protocolValue() + 
+			" at " + block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
+		
+		accurateBlockProtocol(event, packetData.protocolValue());
+		playerPacketDataHashMap.remove(player);
 	}
-	BlockPosition packetBlock = packetData.block();
-	Block block = event.getBlock();
-	if (packetBlock.getX() != block.getX() || packetBlock.getY() != block.getY() || packetBlock.getZ() != block.getZ()) {
-	    playerPacketDataHashMap.remove(player);
-	    return;
-	}
-	// Debug: Log ALL accurate placements
-	getLogger().info("Accurate placement: " + block.getType() + " protocol=" + packetData.protocolValue() + 
-	    " at " + block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
-	accurateBlockProtocol(event, packetData.protocolValue());
-	playerPacketDataHashMap.remove(player);
-    }
 
-    private void accurateBlockProtocol(BlockPlaceEvent event, int protocolValue)
-    {
-	Player player = event.getPlayer();
-	Block block = event.getBlock();
-	Block clickedBlock = event.getBlockAgainst();
-	BlockData blockData = block.getBlockData();
-	BlockData clickBlockData = clickedBlock.getBlockData();
-	if (blockData instanceof Bed) {
-	    return;
-	}
-	if (blockData instanceof Directional) {
-	    int facingIndex = protocolValue & 0xF;
-	    Directional directional = (Directional) blockData;
-	    if (facingIndex == 6) {
-		directional.setFacing(directional.getFacing().getOppositeFace());
-	    }
-	    else if (facingIndex <= 5) {
-		BlockFace face = null;
-		Set<BlockFace> validFaces = directional.getFaces();
-	    	switch (facingIndex) {
-		    case 0:
-			face = BlockFace.DOWN;
-			break;
-		    case 1:
-			face = BlockFace.UP;
-			break;
-		    case 2:
-			face = BlockFace.NORTH;
-			break;
-		    case 3:
-			face = BlockFace.SOUTH;
-			break;
-		    case 4:
-			face = BlockFace.WEST;
-			break;
-		    case 5:
-			face = BlockFace.EAST;
-			break;
+	private void accurateBlockProtocol(BlockPlaceEvent event, int protocolValue) {
+		Player player = event.getPlayer();
+		Block block = event.getBlock();
+		Block clickedBlock = event.getBlockAgainst();
+		BlockData blockData = block.getBlockData();
+		BlockData clickBlockData = clickedBlock.getBlockData();
+
+		getLogger().info("accurateBlockProtocol: material=" + blockData.getMaterial() + 
+						" protocol=" + protocolValue + " binary=" + Integer.toBinaryString(protocolValue));
+
+		if (blockData instanceof Bed) {
+			return;
 		}
-		// Debug: Log what's happening with face validation
-		if (face == BlockFace.UP || face == BlockFace.DOWN) {
-		    getLogger().info("Trying vertical: face=" + face + " valid=" + validFaces.contains(face) + 
-			" validFaces=" + validFaces + " material=" + blockData.getMaterial());
-		}
-		if (face != null && validFaces.contains(face)) {
-		    directional.setFacing(face);
-		    // Debug vertical placements
-		    if (face == BlockFace.UP || face == BlockFace.DOWN) {
-			getLogger().info("Set vertical facing: " + blockData.getMaterial() + " to " + face);
-		    }
-		}
-	    }
-	    if (blockData instanceof Chest) {
-		//Merge chests if needed.
-		Chest chest = (Chest) blockData;
-		//Make sure we don't rotate a "half-double" chest!
-		chest.setType(Chest.Type.SINGLE);
-		BlockFace left = rotateCW(chest.getFacing());
-		// Handle clicking on a chest in the world.
-		if (!clickedBlock.equals(block) && clickBlockData.getMaterial() == chest.getMaterial()) {
-		    Chest clickChest = (Chest) clickBlockData;
-		    if (clickChest.getType() == Chest.Type.SINGLE && chest.getFacing() == clickChest.getFacing()) {
-			BlockFace relation = block.getFace(clickedBlock);
-			if (left == relation) {
-			    chest.setType(Chest.Type.LEFT);
-			} else if (left.getOppositeFace() == relation) {
-			    chest.setType(Chest.Type.RIGHT);
+		
+		if (blockData instanceof Directional) {
+			int facingIndex = protocolValue & 0xF;
+			Directional directional = (Directional) blockData;
+
+			BlockFace currentFacing = directional.getFacing();
+			getLogger().info("Directional: facingIndex=" + facingIndex + " currentFacing=" + currentFacing);
+
+			// Handle reverse - index 6 for most blocks, also check higher indices for stairs
+			if (facingIndex == 6) {
+				BlockFace newFacing = directional.getFacing().getOppositeFace();
+				directional.setFacing(newFacing);
+				getLogger().info("Reversed facing from " + currentFacing + " to " + newFacing);
 			}
-		    }
-		// Handle placing a chest normally.
-		} else if (!player.isSneaking()) {
-		    BlockData leftBlock = block.getRelative(left).getBlockData();
-		    BlockData rigthBlock = block.getRelative(left.getOppositeFace()).getBlockData();
-		    if (leftBlock.getMaterial() == chest.getMaterial() &&
-			((Chest) leftBlock).getType() == Chest.Type.SINGLE &&
-			((Chest) leftBlock).getFacing() == chest.getFacing()) {
-			chest.setType(Chest.Type.LEFT);
-		    } else if (rigthBlock.getMaterial() == chest.getMaterial() &&
-			       ((Chest) rigthBlock).getType() == Chest.Type.SINGLE &&
-			       ((Chest) rigthBlock).getFacing() == chest.getFacing()) {
-			chest.setType(Chest.Type.RIGHT);
-		    }
+			else if (facingIndex <= 5) {
+				BlockFace face = null;
+				Set<BlockFace> validFaces = directional.getFaces();
+				switch (facingIndex) {
+					case 0: face = BlockFace.DOWN; break;
+					case 1: face = BlockFace.UP; break;
+					case 2: face = BlockFace.NORTH; break;
+					case 3: face = BlockFace.SOUTH; break;
+					case 4: face = BlockFace.WEST; break;
+					case 5: face = BlockFace.EAST; break;
+				}
+
+				getLogger().info("Trying to set facing to " + face + " valid=" + 
+							(face != null ? validFaces.contains(face) : "null"));
+
+				if (face != null && validFaces.contains(face)) {
+					directional.setFacing(face);
+					getLogger().info("Set facing to " + face);
+					
+					// Debug vertical placements
+					if (face == BlockFace.UP || face == BlockFace.DOWN) {
+						getLogger().info("Set vertical facing: " + blockData.getMaterial() + " to " + face);
+					}
+				}
+			}
+			else if (blockData instanceof Stairs && facingIndex > 6) {
+				// For stairs with higher indices, try reversing
+				BlockFace newFacing = directional.getFacing().getOppositeFace();
+				directional.setFacing(newFacing);
+				getLogger().info("Stairs special reverse: " + facingIndex + " from " + currentFacing + " to " + newFacing);
+			}
+			
+			// Handle chest merging
+			if (blockData instanceof Chest) {
+				Chest chest = (Chest) blockData;
+				chest.setType(Chest.Type.SINGLE);
+				BlockFace left = rotateCW(chest.getFacing());
+				
+				if (!clickedBlock.equals(block) && clickBlockData.getMaterial() == chest.getMaterial()) {
+					Chest clickChest = (Chest) clickBlockData;
+					if (clickChest.getType() == Chest.Type.SINGLE && chest.getFacing() == clickChest.getFacing()) {
+						BlockFace relation = block.getFace(clickedBlock);
+						if (left == relation) {
+							chest.setType(Chest.Type.LEFT);
+						} else if (left.getOppositeFace() == relation) {
+							chest.setType(Chest.Type.RIGHT);
+						}
+					}
+				} else if (!player.isSneaking()) {
+					BlockData leftBlock = block.getRelative(left).getBlockData();
+					BlockData rightBlock = block.getRelative(left.getOppositeFace()).getBlockData();
+					if (leftBlock.getMaterial() == chest.getMaterial() &&
+						((Chest) leftBlock).getType() == Chest.Type.SINGLE &&
+						((Chest) leftBlock).getFacing() == chest.getFacing()) {
+						chest.setType(Chest.Type.LEFT);
+					} else if (rightBlock.getMaterial() == chest.getMaterial() &&
+							((Chest) rightBlock).getType() == Chest.Type.SINGLE &&
+							((Chest) rightBlock).getFacing() == chest.getFacing()) {
+						chest.setType(Chest.Type.RIGHT);
+					}
+				}
+			} else if (blockData instanceof Stairs) {
+				((Stairs) blockData).setShape(handleStairs(block, (Stairs) blockData));
+			}
 		}
-	    } else if (blockData instanceof Stairs) {
-		((Stairs) blockData).setShape(handleStairs(block, (Stairs) blockData));
-	    }
-	}
-	else if (blockData instanceof Orientable) {
-	    Orientable orientable = (Orientable) blockData;
-	    Set<Axis> validAxes = orientable.getAxes();
-	    Axis axis = null;
-	    switch (protocolValue % 3) {
-		case 0:
-		    axis = Axis.X;
-		    break;
-		case 1:
-		    axis = Axis.Y;
-		    break;
-		case 2:
-		    axis = Axis.Z;
-		    break;
-	    }
-	    if (validAxes.contains(axis)) {
-		orientable.setAxis(axis);
-	    }
-	}
-	protocolValue &= 0xFFFFFFF0;
-	if (protocolValue >= 16) {
-	    if (blockData instanceof Repeater) {
-		Repeater repeater = (Repeater) blockData;
-		int deley = protocolValue / 16;
-		if (deley >= repeater.getMinimumDelay() && deley <= repeater.getMaximumDelay()) {
-			repeater.setDelay(deley);
+		else if (blockData instanceof Orientable) {
+			Orientable orientable = (Orientable) blockData;
+			Set<Axis> validAxes = orientable.getAxes();
+			Axis axis = null;
+			switch (protocolValue % 3) {
+				case 0: axis = Axis.X; break;
+				case 1: axis = Axis.Y; break;
+				case 2: axis = Axis.Z; break;
+			}
+			if (axis != null && validAxes.contains(axis)) {
+				orientable.setAxis(axis);
+				getLogger().info("Set axis to " + axis);
+			}
 		}
-	    }
-	    else if (protocolValue == 16) {
-		if (blockData instanceof Comparator) {
-		    ((Comparator) blockData).setMode(Comparator.Mode.SUBTRACT);
-		} else if (blockData instanceof Bisected) {
-		    Bisected bisected = (Bisected) blockData;
-		    bisected.setHalf(Bisected.Half.TOP);
+		
+		// Handle additional properties - stairs half toggle, repeater delay, comparator mode
+		protocolValue &= 0xFFFFFFF0;
+		if (protocolValue >= 16) {
+			if (blockData instanceof Repeater) {
+				Repeater repeater = (Repeater) blockData;
+				int delay = protocolValue / 16;
+				if (delay >= repeater.getMinimumDelay() && delay <= repeater.getMaximumDelay()) {
+					repeater.setDelay(delay);
+					getLogger().info("Set repeater delay to " + delay);
+				}
+			}
+			else if (protocolValue == 16) {
+				if (blockData instanceof Comparator) {
+					((Comparator) blockData).setMode(Comparator.Mode.SUBTRACT);
+					getLogger().info("Set comparator to subtract mode");
+				} else if (blockData instanceof Bisected) {
+					Bisected bisected = (Bisected) blockData;
+					bisected.setHalf(Bisected.Half.TOP);
+					getLogger().info("Set bisected half to TOP");
+				}
+			}
 		}
-	    }
-	}
-	// Keep the canPlace check for security
-	boolean canPlace = block.canPlace(blockData);
-	if (!canPlace && blockData instanceof Directional) {
-	    Directional dir = (Directional) blockData;
-	    if (dir.getFacing() == BlockFace.UP || dir.getFacing() == BlockFace.DOWN) {
-		getLogger().warning("canPlace=false for vertical: " + blockData.getMaterial() + 
-		    " facing " + dir.getFacing() + " at " + block.getLocation());
-	    }
-	}
-	
-	if (canPlace) {
-	    // Schedule the block update for next tick to bypass Paper's validation
-	    final BlockData finalBlockData = blockData;
-	    getServer().getScheduler().runTask(this, () -> {
-		// Double-check the block is still the same type before updating
-		if (block.getType() == finalBlockData.getMaterial()) {
-		    block.setBlockData(finalBlockData, false);
+		
+		// Validate and apply the block data
+		boolean canPlace = block.canPlace(blockData);
+		if (!canPlace && blockData instanceof Directional) {
+			Directional dir = (Directional) blockData;
+			if (dir.getFacing() == BlockFace.UP || dir.getFacing() == BlockFace.DOWN) {
+				getLogger().warning("canPlace=false for vertical: " + blockData.getMaterial() + 
+					" facing " + dir.getFacing() + " at " + block.getLocation());
+			}
 		}
-	    });
-	} else {
-	    event.setCancelled(true);
-	}
-    }
-
-    private BlockFace rotateCW(BlockFace in) {
-	BlockFace out = null;
-	switch (in) {
-	    case NORTH -> out = BlockFace.EAST;
-	    case WEST -> out = BlockFace.NORTH;
-	    case SOUTH -> out = BlockFace.WEST;
-	    case EAST -> out = BlockFace.SOUTH;
-	}
-	return out;
-    }
-
-    private Stairs.Shape handleStairs(Block block, Stairs stairs) {
-	Bisected.Half half = stairs.getHalf();
-	BlockFace backFace = stairs.getFacing();
-	BlockFace frontFace = backFace.getOppositeFace();
-	BlockFace rightFace = rotateCW(backFace);
-	BlockFace leftFace = rightFace.getOppositeFace();
-	Stairs backStairs = block.getRelative(backFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(backFace).getBlockData() : null;
-	Stairs frontStairs = block.getRelative(frontFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(frontFace).getBlockData() : null;
-	Stairs leftStairs = block.getRelative(leftFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(leftFace).getBlockData() : null;
-	Stairs rightStairs = block.getRelative(rightFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(rightFace).getBlockData() : null;
-
-
-	if ((backStairs != null && backStairs.getHalf() == half && backStairs.getFacing() == leftFace) &&
-	    ! (rightStairs != null && rightStairs.getHalf() == half && rightStairs.getFacing() == backFace) ) {
-	    return Stairs.Shape.OUTER_LEFT;
-	} else if ((backStairs != null && backStairs.getHalf() == half && backStairs.getFacing() == rightFace) &&
-		    ! (leftStairs != null && leftStairs.getHalf() == half && leftStairs.getFacing() == backFace) ) {
-	    return Stairs.Shape.OUTER_RIGHT;
-	} else if ((frontStairs != null && frontStairs.getHalf() == half && frontStairs.getFacing() == leftFace) &&
-		    ! (leftStairs != null && leftStairs.getHalf() == half && leftStairs.getFacing() == backFace) ) {
-	    return Stairs.Shape.INNER_LEFT;
-	} else if ((frontStairs != null && frontStairs.getHalf() == half && frontStairs.getFacing() == rightFace) &&
-		    ! (rightStairs != null && rightStairs.getHalf() == half && rightStairs.getFacing() == backFace) ) {
-	    return Stairs.Shape.INNER_RIGHT;
-	} else {
-	    return Stairs.Shape.STRAIGHT;
+		
+		if (canPlace) {
+			// Schedule the block update for next tick to bypass Paper's validation
+			final BlockData finalBlockData = blockData;
+			getServer().getScheduler().runTask(this, () -> {
+				if (block.getType() == finalBlockData.getMaterial()) {
+					block.setBlockData(finalBlockData, false);
+					getLogger().info("Applied scheduled blockdata update");
+				}
+			});
+		} else {
+			event.setCancelled(true);
+		}
 	}
 
-    }
+	private BlockFace rotateCW(BlockFace in) {
+		return switch (in) {
+			case NORTH -> BlockFace.EAST;
+			case EAST -> BlockFace.SOUTH;
+			case SOUTH -> BlockFace.WEST;
+			case WEST -> BlockFace.NORTH;
+			case NORTH_EAST -> BlockFace.SOUTH_EAST;
+			case SOUTH_EAST -> BlockFace.SOUTH_WEST;
+			case SOUTH_WEST -> BlockFace.NORTH_WEST;
+			case NORTH_WEST -> BlockFace.NORTH_EAST;
+			default -> in;  // For UP, DOWN, SELF
+		};
+	}
+
+	private Stairs.Shape handleStairs(Block block, Stairs stairs) {
+		Bisected.Half half = stairs.getHalf();
+		BlockFace backFace = stairs.getFacing();
+		BlockFace frontFace = backFace.getOppositeFace();
+		BlockFace rightFace = rotateCW(backFace);
+		BlockFace leftFace = rightFace.getOppositeFace();
+		Stairs backStairs = block.getRelative(backFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(backFace).getBlockData() : null;
+		Stairs frontStairs = block.getRelative(frontFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(frontFace).getBlockData() : null;
+		Stairs leftStairs = block.getRelative(leftFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(leftFace).getBlockData() : null;
+		Stairs rightStairs = block.getRelative(rightFace).getBlockData() instanceof Stairs ? (Stairs) block.getRelative(rightFace).getBlockData() : null;
+
+		if ((backStairs != null && backStairs.getHalf() == half && backStairs.getFacing() == leftFace) &&
+			! (rightStairs != null && rightStairs.getHalf() == half && rightStairs.getFacing() == backFace) ) {
+			return Stairs.Shape.OUTER_LEFT;
+		} else if ((backStairs != null && backStairs.getHalf() == half && backStairs.getFacing() == rightFace) &&
+				! (leftStairs != null && leftStairs.getHalf() == half && leftStairs.getFacing() == backFace) ) {
+			return Stairs.Shape.OUTER_RIGHT;
+		} else if ((frontStairs != null && frontStairs.getHalf() == half && frontStairs.getFacing() == leftFace) &&
+				! (leftStairs != null && leftStairs.getHalf() == half && leftStairs.getFacing() == backFace) ) {
+			return Stairs.Shape.INNER_LEFT;
+		} else if ((frontStairs != null && frontStairs.getHalf() == half && frontStairs.getFacing() == rightFace) &&
+				! (rightStairs != null && rightStairs.getHalf() == half && rightStairs.getFacing() == backFace) ) {
+			return Stairs.Shape.INNER_RIGHT;
+		} else {
+			return Stairs.Shape.STRAIGHT;
+		}
+	}
 
     private void onBlockBuildPacket(final PacketEvent event) {
-        Player player = event.getPlayer();
-        PacketContainer packet = event.getPacket();
-	MovingObjectPositionBlock clickInformation = packet.getMovingBlockPositions().read(0);
-	BlockPosition blockPosition = clickInformation.getBlockPosition();
-	Vector posVector = clickInformation.getPosVector();
-
-	double relativeX = posVector.getX() - blockPosition.getX();
-
-	if (relativeX < 2)
-	{
-	    playerPacketDataHashMap.remove(player);
-	    return;
+		Player player = event.getPlayer();
+		PacketContainer packet = event.getPacket();
+		
+		try {
+			if (!packet.getType().equals(PacketType.Play.Client.USE_ITEM_ON)) {
+				return;
+			}
+			
+			MovingObjectPositionBlock clickInformation = packet.getMovingBlockPositions().read(0);
+			BlockPosition blockPosition = clickInformation.getBlockPosition();
+			Vector posVector = clickInformation.getPosVector();
+			
+			double originalX = posVector.getX();
+			double relativeX = originalX - blockPosition.getX();
+			
+			if (relativeX >= 2) {
+				// Tweakeroo sends (value * 2) + 2, so we need to reverse it
+				int protocolValue = ((int) relativeX - 2) / 2;  // PUT THE DIVISION BACK
+				
+				playerPacketDataHashMap.put(player, new PacketData(blockPosition, protocolValue));
+				
+				// Fix X to valid position
+				posVector.setX(blockPosition.getX() + 0.5);
+				clickInformation.setPosVector(posVector);
+				packet.getMovingBlockPositions().write(0, clickInformation);
+				
+				getLogger().info("Fixed X from " + originalX + " to " + posVector.getX() + " (protocol=" + protocolValue + ")");
+			}
+		} catch (Exception e) {
+			return;
+		}
 	}
-	int protocolValue = ((int) relativeX - 2) / 2;
-	playerPacketDataHashMap.put(player, new PacketData(clickInformation.getBlockPosition(), protocolValue));
-	int relativeInt = (int) relativeX;
-	relativeX -= (relativeInt/2)*2; //Remove largest multiple of 2.
-	posVector.setX(relativeX + blockPosition.getX());
-	clickInformation.setPosVector(posVector);
-	packet.getMovingBlockPositions().write(0, clickInformation);
-    }
 
     private void onCustomPayload(final PacketEvent event) {
 	try {
