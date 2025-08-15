@@ -10,12 +10,9 @@ import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.utility.MinecraftReflection;
 import com.comphenix.protocol.utility.StreamSerializer;
 import com.comphenix.protocol.wrappers.BlockPosition;
-import com.comphenix.protocol.wrappers.MinecraftKey;
 import com.comphenix.protocol.wrappers.MovingObjectPositionBlock;
 import com.comphenix.protocol.wrappers.nbt.NbtCompound;
 import com.comphenix.protocol.wrappers.nbt.NbtFactory;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.Unpooled;
 import org.bukkit.Axis;
 import org.bukkit.block.Block;
@@ -40,10 +37,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,17 +68,26 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-	PacketContainer packet = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
-	packet.getMinecraftKeys().write(0,new MinecraftKey("carpet", "hello"));
-	ByteArrayOutputStream rawData = new ByteArrayOutputStream();
-	DataOutputStream outputStream = new DataOutputStream(rawData);
 	try {
-	    StreamSerializer.getDefault().serializeVarInt(outputStream, 69);
-	    StreamSerializer.getDefault().serializeString(outputStream, "SPIGOT-ABP");
-	    packet.getModifier().write(1, MinecraftReflection.getPacketDataSerializer(Unpooled.wrappedBuffer(rawData.toByteArray())));
+	    PacketContainer packet = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
+	    
+	    // Constructing entire payload
+	    ByteArrayOutputStream fullPayload = new ByteArrayOutputStream();
+	    DataOutputStream dos = new DataOutputStream(fullPayload);
+	    
+	    StreamSerializer.getDefault().serializeString(dos, "carpet:hello");
+	    
+	    StreamSerializer.getDefault().serializeVarInt(dos, 69);
+	    StreamSerializer.getDefault().serializeString(dos, "SPIGOT-ABP");
+	    
+	    dos.flush();
+	    
+	    packet.getModifier().write(0, MinecraftReflection.getPacketDataSerializer(
+		Unpooled.wrappedBuffer(fullPayload.toByteArray())
+	    ));
+	    
 	    protocolManager.sendServerPacket(event.getPlayer(), packet);
-	}
-	catch (IOException | InvocationTargetException ignored) {}
+	} catch (Exception ignored) {}
     }
 
     @EventHandler
@@ -104,6 +108,9 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 	    playerPacketDataHashMap.remove(player);
 	    return;
 	}
+	// Debug: Log ALL accurate placements
+	getLogger().info("Accurate placement: " + block.getType() + " protocol=" + packetData.protocolValue() + 
+	    " at " + block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
 	accurateBlockProtocol(event, packetData.protocolValue());
 	playerPacketDataHashMap.remove(player);
     }
@@ -147,8 +154,17 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 			face = BlockFace.EAST;
 			break;
 		}
-		if (validFaces.contains(face)) {
+		// Debug: Log what's happening with face validation
+		if (face == BlockFace.UP || face == BlockFace.DOWN) {
+		    getLogger().info("Trying vertical: face=" + face + " valid=" + validFaces.contains(face) + 
+			" validFaces=" + validFaces + " material=" + blockData.getMaterial());
+		}
+		if (face != null && validFaces.contains(face)) {
 		    directional.setFacing(face);
+		    // Debug vertical placements
+		    if (face == BlockFace.UP || face == BlockFace.DOWN) {
+			getLogger().info("Set vertical facing: " + blockData.getMaterial() + " to " + face);
+		    }
 		}
 	    }
 	    if (blockData instanceof Chest) {
@@ -223,8 +239,25 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 		}
 	    }
 	}
-	if (block.canPlace(blockData)) {
-	    block.setBlockData(blockData);
+	// Keep the canPlace check for security
+	boolean canPlace = block.canPlace(blockData);
+	if (!canPlace && blockData instanceof Directional) {
+	    Directional dir = (Directional) blockData;
+	    if (dir.getFacing() == BlockFace.UP || dir.getFacing() == BlockFace.DOWN) {
+		getLogger().warning("canPlace=false for vertical: " + blockData.getMaterial() + 
+		    " facing " + dir.getFacing() + " at " + block.getLocation());
+	    }
+	}
+	
+	if (canPlace) {
+	    // Schedule the block update for next tick to bypass Paper's validation
+	    final BlockData finalBlockData = blockData;
+	    getServer().getScheduler().runTask(this, () -> {
+		// Double-check the block is still the same type before updating
+		if (block.getType() == finalBlockData.getMaterial()) {
+		    block.setBlockData(finalBlockData, false);
+		}
+	    });
 	} else {
 	    event.setCancelled(true);
 	}
@@ -295,29 +328,40 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
     }
 
     private void onCustomPayload(final PacketEvent event) {
-	PacketContainer packet = event.getPacket();
-	MinecraftKey key = packet.getMinecraftKeys().read(0);
-	if ( !(key.getPrefix().equals("carpet") && key.getKey().equals("hello"))) {
-	    return;
-	}
-	ByteBuf data = (ByteBuf) packet.getModifier().read(1);
 	try {
-	    DataInputStream in = new DataInputStream(new ByteBufInputStream(data));
-	    if (StreamSerializer.getDefault().deserializeVarInt(in) != 420) {
-		return;
-	    }
-	    PacketContainer rulePacket = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
-	    packet.getMinecraftKeys().write(0,new MinecraftKey("carpet", "hello"));
-	    NbtCompound abpRule = NbtFactory.ofCompound("Rules", List.of(NbtFactory.of("Value", "true"),
-									       NbtFactory.of("Manager", "carpet"),
-									       NbtFactory.of("Rule", "accurateBlockPlacement")));
-	    ByteArrayOutputStream rawData = new ByteArrayOutputStream();
-	    DataOutputStream outputStream = new DataOutputStream(rawData);
-	    StreamSerializer.getDefault().serializeVarInt(outputStream, 1);
-	    StreamSerializer.getDefault().serializeCompound(outputStream, abpRule);
-	    rulePacket.getModifier().write(1, MinecraftReflection.getPacketDataSerializer(Unpooled.wrappedBuffer(rawData.toByteArray())));
-	    protocolManager.sendServerPacket(event.getPlayer(), rulePacket);
-	} catch (IOException | InvocationTargetException ignored) {}
+	    PacketContainer packet = event.getPacket();
+	    // Try to get the payload data directly
+	    Object payload = packet.getModifier().read(1);
+	    if (payload == null) return;
+	    sendCarpetRules(event.getPlayer());
+	} catch (Exception ignored) {
+	}
     }
-
+    
+    private void sendCarpetRules(Player player) {
+	try {
+	    PacketContainer rulePacket = new PacketContainer(PacketType.Play.Server.CUSTOM_PAYLOAD);
+	    
+	    ByteArrayOutputStream fullPayload = new ByteArrayOutputStream();
+	    DataOutputStream dos = new DataOutputStream(fullPayload);
+	    StreamSerializer.getDefault().serializeString(dos, "carpet:hello");
+	    
+	    StreamSerializer.getDefault().serializeVarInt(dos, 1);
+	    
+	    NbtCompound abpRule = NbtFactory.ofCompound("Rules", List.of(
+		NbtFactory.of("Value", "true"),
+		NbtFactory.of("Manager", "carpet"),
+		NbtFactory.of("Rule", "accurateBlockPlacement")
+	    ));
+	    StreamSerializer.getDefault().serializeCompound(dos, abpRule);
+	    
+	    dos.flush();
+	    
+	    rulePacket.getModifier().write(0, MinecraftReflection.getPacketDataSerializer(
+		Unpooled.wrappedBuffer(fullPayload.toByteArray())
+	    ));
+	    
+	    protocolManager.sendServerPacket(player, rulePacket);
+	} catch (Exception ignored) {}
+    }
 }
