@@ -38,16 +38,15 @@ import org.bukkit.util.Vector;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class AccurateBlockPlacement extends JavaPlugin implements Listener
-{
+public class AccurateBlockPlacement extends JavaPlugin implements Listener {
     private ProtocolManager protocolManager;
 
-    private Map<Player, PacketData> playerPacketDataHashMap = new HashMap<>();
+    private final Map<Player, PacketData> playerPacketDataHashMap = new ConcurrentHashMap<>();
     @Override public void onEnable() {
 		getLogger().info("AccurateBlockPlacement loaded!");
 		protocolManager = ProtocolLibrary.getProtocolManager();
@@ -64,6 +63,15 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 		});
 		getServer().getPluginManager().registerEvents(this, this);
     }
+
+	@Override
+	public void onDisable() {
+		// Clean up resources
+		playerPacketDataHashMap.clear();
+		if (protocolManager != null) {
+			protocolManager.removePacketListeners(this);
+		}
+	}
 
 
     @EventHandler
@@ -108,19 +116,17 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 		Block block = event.getBlock();
 		Block clickedBlock = event.getBlockAgainst();
 		
-		// Check if this is the right placement - either exact match OR placed adjacent to clicked
 		boolean positionMatches = 
 			(packetBlock.getX() == block.getX() && packetBlock.getY() == block.getY() && packetBlock.getZ() == block.getZ()) ||
 			(packetBlock.getX() == clickedBlock.getX() && packetBlock.getY() == clickedBlock.getY() && packetBlock.getZ() == clickedBlock.getZ());
 		
 		if (!positionMatches) {
-			getLogger().info("Position mismatch: packet=" + packetBlock + " placed=" + block.getLocation() + " clicked=" + clickedBlock.getLocation());
+			// getLogger().info("Position mismatch: packet=" + packetBlock + " placed=" + block.getLocation() + " clicked=" + clickedBlock.getLocation());
 			playerPacketDataHashMap.remove(player);
 			return;
 		}
 		
-		getLogger().info("Accurate placement: " + block.getType() + " protocol=" + packetData.protocolValue() + 
-			" at " + block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
+		// getLogger().info("Accurate placement: " + block.getType() + " protocol=" + packetData.protocolValue() + " at " + block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
 		
 		accurateBlockProtocol(event, packetData.protocolValue());
 		playerPacketDataHashMap.remove(player);
@@ -133,8 +139,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 		BlockData blockData = block.getBlockData();
 		BlockData clickBlockData = clickedBlock.getBlockData();
 
-		getLogger().info("accurateBlockProtocol: material=" + blockData.getMaterial() + 
-						" protocol=" + protocolValue + " binary=" + Integer.toBinaryString(protocolValue));
+		// getLogger().info("accurateBlockProtocol: material=" + blockData.getMaterial() + " protocol=" + protocolValue + " binary=" + Integer.toBinaryString(protocolValue));
 
 		if (blockData instanceof Bed) {
 			return;
@@ -145,13 +150,13 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 			Directional directional = (Directional) blockData;
 
 			BlockFace currentFacing = directional.getFacing();
-			getLogger().info("Directional: facingIndex=" + facingIndex + " currentFacing=" + currentFacing);
+			// getLogger().info("Directional: facingIndex=" + facingIndex + " currentFacing=" + currentFacing);
 
 			// Handle reverse - index 6 for most blocks, also check higher indices for stairs
 			if (facingIndex == 6) {
 				BlockFace newFacing = directional.getFacing().getOppositeFace();
 				directional.setFacing(newFacing);
-				getLogger().info("Reversed facing from " + currentFacing + " to " + newFacing);
+				// getLogger().info("Reversed facing from " + currentFacing + " to " + newFacing);
 			}
 			else if (facingIndex <= 5) {
 				BlockFace face = null;
@@ -165,24 +170,23 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 					case 5: face = BlockFace.EAST; break;
 				}
 
-				getLogger().info("Trying to set facing to " + face + " valid=" + 
-							(face != null ? validFaces.contains(face) : "null"));
+				// getLogger().info("Trying to set facing to " + face + " valid=" + (face != null ? validFaces.contains(face) : "null"));
 
 				if (face != null && validFaces.contains(face)) {
 					directional.setFacing(face);
-					getLogger().info("Set facing to " + face);
+					// getLogger().info("Set facing to " + face);
 					
-					// Debug vertical placements
-					if (face == BlockFace.UP || face == BlockFace.DOWN) {
-						getLogger().info("Set vertical facing: " + blockData.getMaterial() + " to " + face);
-					}
+				    // Debug vertical placements
+					// if (face == BlockFace.UP || face == BlockFace.DOWN) {
+					// 	getLogger().info("Set vertical facing: " + blockData.getMaterial() + " to " + face);
+					// }
 				}
 			}
 			else if (blockData instanceof Stairs && facingIndex > 6) {
 				// For stairs with higher indices, try reversing
 				BlockFace newFacing = directional.getFacing().getOppositeFace();
 				directional.setFacing(newFacing);
-				getLogger().info("Stairs special reverse: " + facingIndex + " from " + currentFacing + " to " + newFacing);
+				// getLogger().info("Stairs special reverse: " + facingIndex + " from " + currentFacing + " to " + newFacing);
 			}
 			
 			// Handle chest merging
@@ -229,7 +233,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 			}
 			if (axis != null && validAxes.contains(axis)) {
 				orientable.setAxis(axis);
-				getLogger().info("Set axis to " + axis);
+				// getLogger().info("Set axis to " + axis);
 			}
 		}
 		
@@ -241,17 +245,17 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 				int delay = protocolValue / 16;
 				if (delay >= repeater.getMinimumDelay() && delay <= repeater.getMaximumDelay()) {
 					repeater.setDelay(delay);
-					getLogger().info("Set repeater delay to " + delay);
+					// getLogger().info("Set repeater delay to " + delay);
 				}
 			}
 			else if (protocolValue == 16) {
 				if (blockData instanceof Comparator) {
 					((Comparator) blockData).setMode(Comparator.Mode.SUBTRACT);
-					getLogger().info("Set comparator to subtract mode");
+					// getLogger().info("Set comparator to subtract mode");
 				} else if (blockData instanceof Bisected) {
 					Bisected bisected = (Bisected) blockData;
 					bisected.setHalf(Bisected.Half.TOP);
-					getLogger().info("Set bisected half to TOP");
+					// getLogger().info("Set bisected half to TOP");
 				}
 			}
 		}
@@ -261,8 +265,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 		if (!canPlace && blockData instanceof Directional) {
 			Directional dir = (Directional) blockData;
 			if (dir.getFacing() == BlockFace.UP || dir.getFacing() == BlockFace.DOWN) {
-				getLogger().warning("canPlace=false for vertical: " + blockData.getMaterial() + 
-					" facing " + dir.getFacing() + " at " + block.getLocation());
+				// getLogger().warning("canPlace=false for vertical: " + blockData.getMaterial() + " facing " + dir.getFacing() + " at " + block.getLocation());
 			}
 		}
 		
@@ -272,7 +275,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 			getServer().getScheduler().runTask(this, () -> {
 				if (block.getType() == finalBlockData.getMaterial()) {
 					block.setBlockData(finalBlockData, false);
-					getLogger().info("Applied scheduled blockdata update");
+					// getLogger().info("Applied scheduled blockdata update");
 				}
 			});
 		} else {
@@ -349,9 +352,10 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener
 				clickInformation.setPosVector(posVector);
 				packet.getMovingBlockPositions().write(0, clickInformation);
 				
-				getLogger().info("Fixed X from " + originalX + " to " + posVector.getX() + " (protocol=" + protocolValue + ")");
+				// getLogger().info("Fixed X from " + originalX + " to " + posVector.getX() + " (protocol=" + protocolValue + ")");
 			}
 		} catch (Exception e) {
+			// getLogger().log(Level.WARNING, "Error processing packet", e);
 			return;
 		}
 	}
