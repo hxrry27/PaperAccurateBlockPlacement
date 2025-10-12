@@ -86,7 +86,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	    StreamSerializer.getDefault().serializeString(dos, "carpet:hello");
 	    
 	    StreamSerializer.getDefault().serializeVarInt(dos, 69);
-	    StreamSerializer.getDefault().serializeString(dos, "SPIGOT-ABP");
+	    StreamSerializer.getDefault().serializeString(dos, "PAPER-ABP");
 	    
 	    dos.flush();
 	    
