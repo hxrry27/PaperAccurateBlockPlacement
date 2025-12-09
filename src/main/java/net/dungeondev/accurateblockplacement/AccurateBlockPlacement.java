@@ -15,6 +15,7 @@ import com.comphenix.protocol.wrappers.nbt.NbtCompound;
 import com.comphenix.protocol.wrappers.nbt.NbtFactory;
 import io.netty.buffer.Unpooled;
 import org.bukkit.Axis;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Bisected;
@@ -63,6 +64,17 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		});
 		getServer().getPluginManager().registerEvents(this, this);
     }
+
+	/**
+	 * Check if a material can be placed in air with accurate placement protocol
+	 * Currently supports: All candle types
+	 * 
+	 * TODO: Move this to a config file to allow server admins to customize air-placeable blocks
+	 */
+	private boolean isAirPlaceableBlock(Material material) {
+		// For now, just candles - extensible for future blocks
+		return material.name().endsWith("_CANDLE") || material == Material.CANDLE;
+	}
 
 	@Override
 	public void onDisable() {
@@ -122,6 +134,13 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		
 		if (!positionMatches) {
 			// getLogger().info("Position mismatch: packet=" + packetBlock + " placed=" + block.getLocation() + " clicked=" + clickedBlock.getLocation());
+			playerPacketDataHashMap.remove(player);
+			return;
+		}
+
+		if (isAirPlaceableBlock(block.getType())) {
+			// Allow placement in air for these blocks when using accurate placement protocol
+			handleAirPlacement(event, packetData.protocolValue());
 			playerPacketDataHashMap.remove(player);
 			return;
 		}
@@ -280,6 +299,26 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			});
 		} else {
 			event.setCancelled(true);
+		}
+	}
+
+	/**
+	 * Handle placement of blocks that can exist in air (like candles)
+	 * This bypasses normal placement validation when using accurate placement protocol
+	 */
+	private void handleAirPlacement(BlockPlaceEvent event, int protocolValue) {
+		Block block = event.getBlock();
+		BlockData blockData = block.getBlockData();
+		
+		// Apply any directional/orientable properties from the protocol
+		accurateBlockProtocol(event, protocolValue);
+		
+		// If the event wasn't cancelled by accurateBlockProtocol, force the placement
+		if (!event.isCancelled()) {
+			final BlockData finalBlockData = blockData;
+			getServer().getScheduler().runTask(this, () -> {
+				block.setBlockData(finalBlockData, false);
+			});
 		}
 	}
 
