@@ -1,5 +1,5 @@
 name: PaperAccurateBlockPlacement
-version: 1.1.0
+version: 1.2.0
 main: net.dungeondev.accurateblockplacement.AccurateBlockPlacement
 description: Implements the Carpet AccurateBlockPlacement protocol on Paper
 author: hxrry27 (forked from DungeonDev)
@@ -8,3 +8,13 @@ dependencies:
   server:
     ProtocolLib:
       required: true
+
+commands:
+  abp:
+    description: PaperAcurateBlockPlacement commands
+    usage: /abp [reload]
+
+permissions:
+  accurateblockplacement.reload:
+    description: Allows reloading the plugin config
+    default: op

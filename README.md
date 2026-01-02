@@ -10,7 +10,7 @@ Implements Carpet's Accurate Block Placement Protocol for Paper/Pupur-based serv
 Similarly adds support for FlexibleBlockPlacement from Tweakeroo and easyPlace from Litematica.
 
 ## Version Compatibility
-- **Minecraft**: 1.21.7 - 1.21.10
+- **Minecraft**: 1.21.7-1.21.11
 - **Server Software**: Paper/Pupur
 - **ProtocolLib**: 5.4.0 or higher
 

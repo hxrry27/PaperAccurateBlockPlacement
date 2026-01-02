@@ -1,0 +1,11 @@
+# PaperAccurateBlockPlacement Configuration
+# https://github.com/hxrry27/PaperAccurateBlockPlacement
+
+# don't change this!
+config-version: 1
+
+# air placement settings
+# these settings control which blocks can be placed in mid-air when using the accurate block protocol
+air-placement:
+  # allow candles to be placed in mid-air
+  candles: false
