@@ -9,3 +9,5 @@ config-version: 1
 air-placement:
   # allow candles to be placed in mid-air
   candles: false
+
+debug: false
