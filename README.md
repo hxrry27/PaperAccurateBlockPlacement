@@ -2,6 +2,8 @@
 
 > A maintained fork of [DungeonDev's SpigotAccurateBlockPlacement](https://github.com/DungeonDev/SpigotAccurateBlockPlacement)
 
+Check us out on [Modrinth :)](https://modrinth.com/plugin/paper-accurate-block-placement)
+
 ## Original Credit
 Original implementation by DungeonDev. This fork maintains compatibility while adding support for newer Minecraft versions. 
 
