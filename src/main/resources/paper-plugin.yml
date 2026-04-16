@@ -3,7 +3,7 @@ version: 1.2.0
 main: net.dungeondev.accurateblockplacement.AccurateBlockPlacement
 description: Implements the Carpet AccurateBlockPlacement protocol on Paper
 author: hxrry27 (forked from DungeonDev)
-api-version: 1.21
+api-version: 26.1
 dependencies:
   server:
     ProtocolLib:
