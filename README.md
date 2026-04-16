@@ -1,5 +1,7 @@
 # PaperAccurateBlockPlacement
 
+# PLEASE NOTE: PLUGIN SUPPORTS 26.1 AS OF MOST RECENT COMMIT, HOWEVER ITS ADVISED TO WAIT FOR BOTH STABLE PAPER 26.1 AND PROTOCOL LIB RELEASES. IF YOU WANT TO USE IN ADVANCE OF THAT, BUILD FROM SOURCE AND USE PROTOCOL LIB DEV BUILD
+
 > A maintained fork of [DungeonDev's SpigotAccurateBlockPlacement](https://github.com/DungeonDev/SpigotAccurateBlockPlacement)
 
 Check us out on [Modrinth :)](https://modrinth.com/plugin/paper-accurate-block-placement)
