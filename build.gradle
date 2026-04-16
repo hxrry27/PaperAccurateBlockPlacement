@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'net.dungeondev'
-version '1.2.0'
+version '1.2.0+mc26.1'
 
 repositories {
     mavenCentral()
