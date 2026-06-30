@@ -2,12 +2,26 @@
 # https://github.com/hxrry27/PaperAccurateBlockPlacement
 
 # don't change this!
-config-version: 1
+config-version: 2
 
-# air placement settings
-# these settings control which blocks can be placed in mid-air when using the accurate block protocol
-air-placement:
-  # allow candles to be placed in mid-air
-  candles: false
+#   v3  - (recommended)
+#
+#   v2  - legacy Carpet "AccurateBlockPlacement" protocol. Only directional placement is carried.
+#         Use this only if you specifically need the old behaviour. Clients should pick "V2".
+protocol:
+  version: v3
+
+# Per-feature toggles. open-state and multi-state require protocol.version = v3.
+placement:
+  # facing / rotation for any directional block (pistons, chests, observers, stairs, hoppers...).
+  # Carried by BOTH v2 and v3.
+  directional: true
+
+  # open/closed for doors, fence gates and trapdoors. (v3 only)
+  open-state: true
+
+  # extra transmitted states: note-block pitch, door hinge, repeater delay, comparator mode,
+  # cake bites, daylight-detector inverted, slab/door half, stair/rail shape. (v3 only)
+  multi-state: true
 
 debug: false
