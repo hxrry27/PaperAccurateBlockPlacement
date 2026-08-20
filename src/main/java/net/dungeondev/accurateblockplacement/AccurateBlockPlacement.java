@@ -1,17 +1,18 @@
 package net.dungeondev.accurateblockplacement;
 
-import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
-import com.comphenix.protocol.events.ListenerPriority;
-import com.comphenix.protocol.events.PacketAdapter;
-import com.comphenix.protocol.events.PacketContainer;
-import com.comphenix.protocol.events.PacketEvent;
-import com.comphenix.protocol.utility.StreamSerializer;
-import com.comphenix.protocol.wrappers.BlockPosition;
-import com.comphenix.protocol.wrappers.MovingObjectPositionBlock;
-import com.comphenix.protocol.wrappers.nbt.NbtCompound;
-import com.comphenix.protocol.wrappers.nbt.NbtFactory;
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.event.PacketListenerAbstract;
+import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import com.github.retrooper.packetevents.event.PacketReceiveEvent;
+import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon;
+import com.github.retrooper.packetevents.protocol.player.User;
+import com.github.retrooper.packetevents.util.Vector3f;
+import com.github.retrooper.packetevents.util.Vector3i;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPluginMessage;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage;
+import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import org.bukkit.Axis;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -37,16 +38,11 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.plugin.messaging.Messenger;
-import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AccurateBlockPlacement extends JavaPlugin implements Listener {
@@ -55,74 +51,64 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	private static final String CARPET_HELLO = "carpet:hello";
 	private static final int SERVUX_S2C_METADATA = 1;
 	private static final int SERVUX_PROTOCOL_VERSION = 1;
+	
+	private static final int CARPET_PROTOCOL_VERSION = 69;
+	private static final String BRAND = "PAPER-ABP";
+	private static final float PROTOCOL_CURSOR_THRESHOLD = 2.0f;
 
-	private ProtocolManager protocolManager;
 	private FileConfiguration config;
 
-	private boolean useV3;
-	private boolean toggleDirectional;
-	private boolean toggleOpen;
-	private boolean toggleMulti;
+	private volatile boolean debugEnabled;
+	private volatile boolean useV3;
+	private volatile boolean toggleDirectional;
+	private volatile boolean toggleOpen;
+	private volatile boolean toggleMulti;
 
 	private V3Protocol v3;
 
-	private final Map<Player, PacketData> playerPacketDataHashMap = new ConcurrentHashMap<>();
+	private final Map<UUID, PacketData> playerPacketDataHashMap = new ConcurrentHashMap<>();
+
+	private final Set<UUID> greeted = ConcurrentHashMap.newKeySet();
+
+	@Override
+	public void onLoad() {
+		PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
+		PacketEvents.getAPI().load();
+
+		PacketEvents.getAPI().getEventManager().registerListener(
+				new PacketListenerAbstract(PacketListenerPriority.LOWEST) {
+					@Override
+					public void onPacketReceive(PacketReceiveEvent event) {
+						PacketTypeCommon type = event.getPacketType();
+						if (type == PacketType.Play.Client.PLAYER_BLOCK_PLACEMENT) {
+							onBlockBuildPacket(event);
+						} else if (type == PacketType.Play.Client.PLUGIN_MESSAGE) {
+							onCustomPayload(event);
+						}
+					}
+				});
+	}
 
 	@Override
 	public void onEnable() {
+		PacketEvents.getAPI().init();
 
 		saveDefaultConfig();
 		config = getConfig();
 		loadSettings();
 
 		getLogger().info("PaperAccurateBlockPlacement loaded! Protocol: " + (useV3 ? "v3" : "v2"));
-		protocolManager = ProtocolLibrary.getProtocolManager();
-
-		protocolManager.addPacketListener(
-				new PacketAdapter(this, ListenerPriority.LOWEST, PacketType.Play.Client.USE_ITEM_ON) {
-					@Override
-					public void onPacketReceiving(final PacketEvent event) {
-						onBlockBuildPacket(event);
-					}
-				});
-
-		registerChannels();
 
 		getServer().getPluginManager().registerEvents(this, this);
 	}
 
-	private void registerChannels() {
-		var messenger = getServer().getMessenger();
-		// outgoing
-		registerOutgoing(messenger, SERVUX_TWEAKS);
-		registerOutgoing(messenger, SERVUX_LITEMATICS);
-		registerOutgoing(messenger, CARPET_HELLO);
-		// incoming
-		registerIncoming(messenger, SERVUX_TWEAKS);
-		registerIncoming(messenger, SERVUX_LITEMATICS);
-	}
-
-	private void registerOutgoing(Messenger messenger, String channel) {
-		if (!messenger.isOutgoingChannelRegistered(this, channel)) {
-			messenger.registerOutgoingPluginChannel(this, channel);
-		}
-	}
-
-	private void registerIncoming(Messenger messenger, String channel) {
-		if (!messenger.isIncomingChannelRegistered(this, channel)) {
-			messenger.registerIncomingPluginChannel(this, channel, (ch, player, message) -> {
-				debug("Received request on " + ch + " from " + player.getName() + " (" + message.length + " bytes)");
-				sendServuxMetadata(player, ch);
-			});
-		}
-	}
-
 	private void loadSettings() {
+		this.debugEnabled = config.getBoolean("debug", false);
 		this.useV3 = !config.getString("protocol.version", "v3").equalsIgnoreCase("v2");
 		this.toggleDirectional = config.getBoolean("placement.directional", true);
 		this.toggleOpen = config.getBoolean("placement.open-state", true);
 		this.toggleMulti = config.getBoolean("placement.multi-state", true);
-		this.v3 = new V3Protocol(getLogger(), config.getBoolean("debug", false));
+		this.v3 = new V3Protocol(getLogger(), debugEnabled);
 	}
 
 	private V3Protocol.Toggles toggles() {
@@ -147,9 +133,10 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	@Override
 	public void onDisable() {
 		playerPacketDataHashMap.clear();
+		greeted.clear();
 
-		if (protocolManager != null) {
-			protocolManager.removePacketListeners(this);
+		if (PacketEvents.getAPI() != null) {
+			PacketEvents.getAPI().terminate();
 		}
 	}
 
@@ -177,7 +164,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	}
 
 	private void debug(String message) {
-		if (config.getBoolean("debug", false)) {
+		if (debugEnabled) {
 			getLogger().info("[DEBUG] " + message);
 		}
 	}
@@ -187,92 +174,127 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		advertiseProtocol(event.getPlayer());
 	}
 
+	@EventHandler
+	public void onPlayerQuit(PlayerQuitEvent event) {
+		UUID uuid = event.getPlayer().getUniqueId();
+		playerPacketDataHashMap.remove(uuid);
+		greeted.remove(uuid);
+	}
+
 	private void advertiseProtocol(Player player) {
-		// the client only registers its receiver once the world has loaded, so send a few times over the
-		// first few seconds. the incoming listener also replies whenever the client asks.
 		long[] delays = { 0L, 20L, 40L, 100L, 200L };
 		for (long delay : delays) {
 			getServer().getScheduler().runTaskLater(this, () -> {
 				if (!player.isOnline()) {
 					return;
 				}
+				User user = PacketEvents.getAPI().getPlayerManager().getUser(player);
+				if (user == null) {
+					return;
+				}
 				if (useV3) {
-					sendServuxMetadata(player, SERVUX_TWEAKS);
-					sendServuxMetadata(player, SERVUX_LITEMATICS);
+					sendServuxMetadata(user, SERVUX_TWEAKS);
+					sendServuxMetadata(user, SERVUX_LITEMATICS);
 				} else {
-					sendCarpetHello(player);
-					sendCarpetRules(player);
+					sendCarpetHello(user);
+					sendCarpetRules(user);
 				}
 			}, delay);
 		}
 	}
 
-	private void sendCarpetHello(Player player) {
+	private void onCustomPayload(final PacketReceiveEvent event) {
 		try {
-			ByteArrayOutputStream body = new ByteArrayOutputStream();
-			DataOutputStream dos = new DataOutputStream(body);
-			StreamSerializer.getDefault().serializeVarInt(dos, 69);
-			StreamSerializer.getDefault().serializeString(dos, "PAPER-ABP");
-			dos.flush();
+			WrapperPlayClientPluginMessage in = new WrapperPlayClientPluginMessage(event);
+			String channel = in.getChannelName();
 
-			player.sendPluginMessage(this, CARPET_HELLO, body.toByteArray());
-		} catch (Exception e) {
-			debug("Failed to send carpet hello to " + player.getName() + ": " + e.getMessage());
+			boolean wanted = useV3
+					? (SERVUX_TWEAKS.equals(channel) || SERVUX_LITEMATICS.equals(channel))
+					: CARPET_HELLO.equals(channel);
+			if (!wanted) {
+				return;
+			}
+
+			User user = event.getUser();
+			UUID uuid = user != null ? user.getUUID() : null;
+			if (uuid == null || !greeted.add(uuid)) {
+				return;
+			}
+
+			debug("Handshake request on " + channel + " from " + user.getName());
+			if (useV3) {
+				sendServuxMetadata(user, channel);
+			} else {
+				sendCarpetHello(user);
+				sendCarpetRules(user);
+			}
+		} catch (Exception ignored) {
 		}
 	}
 
-	private void sendServuxMetadata(Player player, String channel) {
+	private void sendCarpetHello(User user) {
+		send(user, CARPET_HELLO, Payloads.carpetHello(CARPET_PROTOCOL_VERSION, BRAND));
+	}
+
+	private void sendCarpetRules(User user) {
+		send(user, CARPET_HELLO, Payloads.carpetRule("Rules", "true", "carpet", "accurateBlockPlacement"));
+	}
+
+	private void sendServuxMetadata(User user, String channel) {
+		send(user, channel, Payloads.servuxMetadata(SERVUX_S2C_METADATA, SERVUX_PROTOCOL_VERSION, BRAND, channel));
+	}
+
+	private void send(User user, String channel, byte[] body) {
 		try {
-			ByteArrayOutputStream body = new ByteArrayOutputStream();
-			DataOutputStream dos = new DataOutputStream(body);
-
-			// body = varint(metadata type) + network nbt; the channel goes to the messenger, not the body
-			dos.writeByte(SERVUX_S2C_METADATA); // varint for 1 is a single byte
-
-			// nameless root compound, then entries (type, name, payload), then the end tag
-			dos.writeByte(10); // TAG_Compound
-			writeIntTag(dos, "version", SERVUX_PROTOCOL_VERSION);
-			writeStringTag(dos, "servux", "PAPER-ABP");
-			writeStringTag(dos, "name", "PAPER-ABP");
-			writeStringTag(dos, "id", channel);
-			dos.writeByte(0); // TAG_End
-
-			dos.flush();
-
-			player.sendPluginMessage(this, channel, body.toByteArray());
-			debug("Sent servux metadata on " + channel + " to " + player.getName());
+			user.sendPacket(new WrapperPlayServerPluginMessage(channel, body));
+			debug("Sent " + body.length + " bytes on " + channel + " to " + user.getName());
 		} catch (Exception e) {
-			debug("Failed to send servux metadata (" + channel + ") to " + player.getName() + ": " + e.getMessage());
+			debug("Failed to send on " + channel + " to " + user.getName() + ": " + e.getMessage());
 		}
 	}
 
-	private static void writeStringTag(DataOutputStream dos, String name, String value) throws IOException {
-		dos.writeByte(8); // TAG_String
-		dos.writeUTF(name);
-		dos.writeUTF(value);
-	}
 
-	private static void writeIntTag(DataOutputStream dos, String name, int value) throws IOException {
-		dos.writeByte(3); // TAG_Int
-		dos.writeUTF(name);
-		dos.writeInt(value);
-	}
+	private void onBlockBuildPacket(final PacketReceiveEvent event) {
+		try {
+			WrapperPlayClientPlayerBlockPlacement wrapper = new WrapperPlayClientPlayerBlockPlacement(event);
+			Vector3f cursor = wrapper.getCursorPosition();
 
-	@EventHandler
-	public void onPlayerQuit(PlayerQuitEvent event) {
-		playerPacketDataHashMap.remove(event.getPlayer());
+			float relativeX = cursor.getX();
+			if (relativeX < PROTOCOL_CURSOR_THRESHOLD) {
+				return;
+			}
+
+			int rawValue = (int) relativeX - 2;
+
+			User user = event.getUser();
+			UUID uuid = user != null ? user.getUUID() : null;
+			if (uuid != null) {
+				playerPacketDataHashMap.put(uuid, new PacketData(wrapper.getBlockPosition(), rawValue));
+			}
+
+			wrapper.setCursorPosition(new Vector3f(0.5f, cursor.getY(), cursor.getZ()));
+			event.markForReEncode(true);
+
+			debug("Fixed X from " + relativeX + " to 0.5 (raw=" + rawValue + ")");
+		} catch (Exception e) {
+			debug("Error processing block placement packet: " + e.getMessage());
+			if (debugEnabled) {
+				e.printStackTrace();
+			}
+		}
 	}
 
 	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
 	public void onBuildEvent(BlockPlaceEvent event) {
 		Player player = event.getPlayer();
-		PacketData packetData = playerPacketDataHashMap.get(player);
+		UUID uuid = player.getUniqueId();
+		PacketData packetData = playerPacketDataHashMap.get(uuid);
 
 		if (packetData == null) {
 			return;
 		}
 
-		BlockPosition packetBlock = packetData.block();
+		Vector3i packetBlock = packetData.block();
 		Block block = event.getBlock();
 		Block clickedBlock = event.getBlockAgainst();
 
@@ -284,7 +306,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		if (!positionMatches) {
 			debug("Position mismatch: packet=" + packetBlock + " placed=" + block.getLocation() + " clicked="
 					+ clickedBlock.getLocation());
-			playerPacketDataHashMap.remove(player);
+			playerPacketDataHashMap.remove(uuid);
 			return;
 		}
 
@@ -299,7 +321,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			// v2: payload = facing*2 + extras, so halve it back for the legacy decoder
 			accurateBlockProtocol(event, rawValue >>> 1);
 		}
-		playerPacketDataHashMap.remove(player);
+		playerPacketDataHashMap.remove(uuid);
 	}
 
 	private void applyV3(BlockPlaceEvent event, int rawValue) {
@@ -547,63 +569,6 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			return Stairs.Shape.INNER_RIGHT;
 		} else {
 			return Stairs.Shape.STRAIGHT;
-		}
-	}
-
-	private void onBlockBuildPacket(final PacketEvent event) {
-		Player player = event.getPlayer();
-		PacketContainer packet = event.getPacket();
-
-		try {
-			if (!packet.getType().equals(PacketType.Play.Client.USE_ITEM_ON)) {
-				return;
-			}
-
-			MovingObjectPositionBlock clickInformation = packet.getMovingBlockPositions().read(0);
-			BlockPosition blockPosition = clickInformation.getBlockPosition();
-			Vector posVector = clickInformation.getPosVector();
-
-			double originalX = posVector.getX();
-			double relativeX = originalX - blockPosition.getX();
-
-			if (relativeX >= 2) {
-				int rawValue = (int) relativeX - 2;
-
-				playerPacketDataHashMap.put(player, new PacketData(blockPosition, rawValue));
-
-				// fix X to valid position
-				posVector.setX(blockPosition.getX() + 0.5);
-				clickInformation.setPosVector(posVector);
-				packet.getMovingBlockPositions().write(0, clickInformation);
-
-				debug("Fixed X from " + originalX + " to " + posVector.getX() + " (raw=" + rawValue + ")");
-			}
-		} catch (Exception e) {
-			getLogger().warning("Error processing block placement packet: " + e.getMessage());
-			if (config.getBoolean("debug", false)) {
-				e.printStackTrace();
-			}
-			return;
-		}
-	}
-
-	private void sendCarpetRules(Player player) {
-		try {
-			ByteArrayOutputStream body = new ByteArrayOutputStream();
-			DataOutputStream dos = new DataOutputStream(body);
-			StreamSerializer.getDefault().serializeVarInt(dos, 1);
-
-			NbtCompound abpRule = NbtFactory.ofCompound("Rules", List.of(
-					NbtFactory.of("Value", "true"),
-					NbtFactory.of("Manager", "carpet"),
-					NbtFactory.of("Rule", "accurateBlockPlacement")));
-			StreamSerializer.getDefault().serializeCompound(dos, abpRule);
-
-			dos.flush();
-
-			player.sendPluginMessage(this, CARPET_HELLO, body.toByteArray());
-		} catch (Exception e) {
-			debug("Failed to send carpet rules: " + e.getMessage());
 		}
 	}
 }

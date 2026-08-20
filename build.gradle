@@ -1,24 +1,22 @@
 plugins {
     id 'java'
-    id 'com.gradleup.shadow' version '8.3.9'
 }
 
 group 'net.dungeondev'
-version '1.3.0+mc26.2'
+version '1.4.0+mc26.2'
 
 repositories {
     mavenCentral()
-    maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
     maven { url 'https://repo.papermc.io/repository/maven-public/' }
+    maven { url 'https://repo.codemc.io/repository/maven-releases/' }
 }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
-    
+
     compileOnly 'io.papermc.paper:paper-api:26.2.build.+'
-    compileOnly group: 'io.netty', name: 'netty-all', version: '4.2.10.Final'
-    compileOnly group: "net.dmulloy2", name: "ProtocolLib", version: "5.4.0"
+    compileOnly 'com.github.retrooper:packetevents-spigot:2.13.0'
 }
 
 def targetJavaVersion = 25
@@ -30,9 +28,4 @@ java {
 
 test {
     useJUnitPlatform()
-}
-
-shadowJar {
-    archiveClassifier.set('')
-    minimize()
 }
