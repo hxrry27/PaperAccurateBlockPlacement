@@ -3,7 +3,7 @@ plugins {
 }
 
 group 'net.dungeondev'
-version '1.4.0+mc26.2'
+version '1.5.0+mc26.3-rc3'
 
 repositories {
     mavenCentral()
@@ -15,7 +15,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
 
-    compileOnly 'io.papermc.paper:paper-api:26.2.build.+'
+    compileOnly 'io.papermc.paper:paper-api:26.3-rc-3.build.+'
     compileOnly 'com.github.retrooper:packetevents-spigot:2.13.0'
 }
 
