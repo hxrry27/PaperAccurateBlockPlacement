@@ -11,11 +11,6 @@ dependencies:
       required: true
       join-classpath: true
 
-commands:
-  abp:
-    description: PaperAcurateBlockPlacement commands
-    usage: /abp [reload]
-
 permissions:
   accurateblockplacement.reload:
     description: Allows reloading the plugin config
