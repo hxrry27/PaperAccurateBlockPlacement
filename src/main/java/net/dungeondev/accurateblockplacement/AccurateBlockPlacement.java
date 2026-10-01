@@ -275,7 +275,9 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			wrapper.setCursorPosition(new Vector3f(0.5f, cursor.getY(), cursor.getZ()));
 			event.markForReEncode(true);
 
-			debug("Fixed X from " + relativeX + " to 0.5 (raw=" + rawValue + ")");
+			if (debugEnabled) {
+				debug("Fixed X from " + relativeX + " to 0.5 (raw=" + rawValue + ")");
+			}
 		} catch (Exception e) {
 			debug("Error processing block placement packet: " + e.getMessage());
 			if (debugEnabled) {
@@ -312,8 +314,10 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 
 		int rawValue = packetData.rawValue();
 
-		debug("Accurate placement: " + block.getType() + " raw=" + rawValue + " at "
-				+ block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
+		if (debugEnabled) {
+			debug("Accurate placement: " + block.getType() + " raw=" + rawValue + " at "
+					+ block.getLocation() + " clicked: " + event.getBlockAgainst().getFace(block));
+		}
 
 		if (useV3) {
 			applyV3(event, rawValue);
@@ -332,7 +336,9 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		boolean replacedWater = isWaterlike(event.getBlockReplacedState().getBlockData());
 		BlockData decoded = v3.decode(original, rawValue, player.getFacing(), replacedWater, toggles());
 
-		debug("V3 decode: " + original.getAsString() + " -> " + decoded.getAsString());
+		if (debugEnabled) {
+			debug("V3 decode: " + original.getAsString() + " -> " + decoded.getAsString());
+		}
 
 		if (block.canPlace(decoded)) {
 			getServer().getScheduler().runTask(this, () -> {

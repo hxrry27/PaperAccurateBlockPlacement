@@ -104,7 +104,9 @@ final class V3Protocol {
 			if (enabled(d.category(), cfg) && index < n) {
 				try {
 					d.apply().apply(data, index);
-					debug(data.getMaterial() + ": set " + d.name() + " -> index " + index);
+					if (debug) {
+						debug(data.getMaterial() + ": set " + d.name() + " -> index " + index);
+					}
 				} catch (Exception e) {
 					debug("failed to set " + d.name() + " idx " + index + " on " + data.getMaterial() + ": "
 							+ e.getMessage());
@@ -162,7 +164,7 @@ final class V3Protocol {
 		return 32 - Integer.numberOfLeadingZeros(n - 1);
 	}
 
-	// the whitelisted props this block has, sorted alphabetically by name
+	// the whitelisted props this block has, alphabetical by name because DESCRIPTORS already is
 	private List<PropDesc> applicable(BlockData data) {
 		List<PropDesc> out = new ArrayList<>();
 		for (PropDesc d : DESCRIPTORS) {
@@ -170,8 +172,13 @@ final class V3Protocol {
 				out.add(d);
 			}
 		}
-		out.sort(Comparator.comparing(PropDesc::name));
 		return out;
+	}
+
+	// sorted once here, the name order is the bit order and does not depend on the block. stable, so the two
+	// "shape" and two "type" entries keep their relative order (no block has both of either)
+	private static List<PropDesc> sortedByName(List<PropDesc> descriptors) {
+		return descriptors.stream().sorted(Comparator.comparing(PropDesc::name)).toList();
 	}
 
 	// property table. name drives the alphabetical ordering, count drives the bit width, and apply sets
@@ -198,7 +205,7 @@ final class V3Protocol {
 			BlockFace.SOUTH_SOUTH_EAST
 	};
 
-	private static final List<PropDesc> DESCRIPTORS = List.of(
+	private static final List<PropDesc> DESCRIPTORS = sortedByName(List.of(
 			new PropDesc("axis",
 					d -> d instanceof Orientable,
 					d -> ((Orientable) d).getAxes().size(),
@@ -292,5 +299,5 @@ final class V3Protocol {
 					d -> d instanceof Chest,
 					d -> 3,
 					Category.DIRECTIONAL,
-					(d, i) -> ((Chest) d).setType(Chest.Type.values()[i])));
+					(d, i) -> ((Chest) d).setType(Chest.Type.values()[i]))));
 }
