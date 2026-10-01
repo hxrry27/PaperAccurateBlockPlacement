@@ -68,7 +68,8 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 
 	private final Map<UUID, PacketData> playerPacketDataHashMap = new ConcurrentHashMap<>();
 
-	private final Set<UUID> greeted = ConcurrentHashMap.newKeySet();
+	// the channels each player has already been answered on, one greeting per channel and not one per player
+	private final Map<UUID, Set<String>> greeted = new ConcurrentHashMap<>();
 
 	@Override
 	public void onLoad() {
@@ -217,7 +218,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 
 			User user = event.getUser();
 			UUID uuid = user != null ? user.getUUID() : null;
-			if (uuid == null || !greeted.add(uuid)) {
+			if (uuid == null || !greeted.computeIfAbsent(uuid, key -> ConcurrentHashMap.newKeySet()).add(channel)) {
 				return;
 			}
 
