@@ -55,6 +55,8 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	private static final int CARPET_PROTOCOL_VERSION = 69;
 	private static final String BRAND = "PAPER-ABP";
 	private static final float PROTOCOL_CURSOR_THRESHOLD = 2.0f;
+	// a float stops holding whole numbers past 2^24, and no block state needs anywhere near that many bits
+	private static final float PROTOCOL_CURSOR_LIMIT = 16777216.0f;
 
 	private FileConfiguration config;
 
@@ -260,7 +262,8 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			Vector3f cursor = wrapper.getCursorPosition();
 
 			float relativeX = cursor.getX();
-			if (relativeX < PROTOCOL_CURSOR_THRESHOLD) {
+			// negated so NaN falls out too. leave those untouched, the server rejects them as an ordinary bad cursor
+			if (!(relativeX >= PROTOCOL_CURSOR_THRESHOLD && relativeX < PROTOCOL_CURSOR_LIMIT)) {
 				return;
 			}
 
