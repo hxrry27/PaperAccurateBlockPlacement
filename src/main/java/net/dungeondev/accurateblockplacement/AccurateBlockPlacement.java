@@ -12,7 +12,6 @@ import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPluginMessage;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage;
-import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import org.bukkit.Axis;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -70,28 +69,21 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 
 	private final Set<UUID> greeted = ConcurrentHashMap.newKeySet();
 
-	@Override
-	public void onLoad() {
-		PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-		PacketEvents.getAPI().load();
-
-		PacketEvents.getAPI().getEventManager().registerListener(
-				new PacketListenerAbstract(PacketListenerPriority.LOWEST) {
-					@Override
-					public void onPacketReceive(PacketReceiveEvent event) {
-						PacketTypeCommon type = event.getPacketType();
-						if (type == PacketType.Play.Client.PLAYER_BLOCK_PLACEMENT) {
-							onBlockBuildPacket(event);
-						} else if (type == PacketType.Play.Client.PLUGIN_MESSAGE) {
-							onCustomPayload(event);
-						}
-					}
-				});
-	}
+	private final PacketListenerAbstract packetListener = new PacketListenerAbstract(PacketListenerPriority.LOWEST) {
+		@Override
+		public void onPacketReceive(PacketReceiveEvent event) {
+			PacketTypeCommon type = event.getPacketType();
+			if (type == PacketType.Play.Client.PLAYER_BLOCK_PLACEMENT) {
+				onBlockBuildPacket(event);
+			} else if (type == PacketType.Play.Client.PLUGIN_MESSAGE) {
+				onCustomPayload(event);
+			}
+		}
+	};
 
 	@Override
 	public void onEnable() {
-		PacketEvents.getAPI().init();
+		PacketEvents.getAPI().getEventManager().registerListener(packetListener);
 
 		saveDefaultConfig();
 		config = getConfig();
@@ -135,9 +127,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		playerPacketDataHashMap.clear();
 		greeted.clear();
 
-		if (PacketEvents.getAPI() != null) {
-			PacketEvents.getAPI().terminate();
-		}
+		PacketEvents.getAPI().getEventManager().unregisterListener(packetListener);
 	}
 
 	@Override

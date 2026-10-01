@@ -7,7 +7,9 @@ api-version: 26.3
 dependencies:
   server:
     packetevents:
+      load: BEFORE
       required: true
+      join-classpath: true
 
 commands:
   abp:
