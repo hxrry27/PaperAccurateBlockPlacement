@@ -42,11 +42,14 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	private static final String SERVUX_TWEAKS = "servux:tweaks";
@@ -60,6 +63,8 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	private static final float PROTOCOL_CURSOR_THRESHOLD = 2.0f;
 	// a float stops holding whole numbers past 2^24, and no block state needs anywhere near that many bits
 	private static final float PROTOCOL_CURSOR_LIMIT = 16777216.0f;
+	private static final int MAX_PENDING_PLACEMENTS = 8;
+	private static final long PENDING_PLACEMENT_TTL_NANOS = 5_000_000_000L;
 
 	private FileConfiguration config;
 
@@ -71,7 +76,11 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 
 	private volatile V3Protocol v3;
 
-	private final Map<UUID, PacketData> playerPacketDataHashMap = new ConcurrentHashMap<>();
+	// placements the client has sent that the server has not turned into a BlockPlaceEvent yet, oldest first. a
+	// client can get several packets in before one tick handles them, so this cannot be a single slot
+	private final Map<UUID, Deque<PacketData>> playerPacketDataHashMap = new ConcurrentHashMap<>();
+
+	private final AtomicLong placementSequence = new AtomicLong();
 
 	private final Set<UUID> greeted = ConcurrentHashMap.newKeySet();
 
@@ -265,6 +274,18 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			WrapperPlayClientPlayerBlockPlacement wrapper = new WrapperPlayClientPlayerBlockPlacement(event);
 			Vector3f cursor = wrapper.getCursorPosition();
 
+			User user = event.getUser();
+			UUID uuid = user != null ? user.getUUID() : null;
+			if (uuid != null) {
+				// a new click on the same face supersedes an older one that never became a placement
+				Deque<PacketData> pending = playerPacketDataHashMap.get(uuid);
+				if (pending != null) {
+					long now = System.nanoTime();
+					pending.removeIf(data -> now - data.receivedNanos() > PENDING_PLACEMENT_TTL_NANOS
+							|| (data.face() == wrapper.getFace() && data.block().equals(wrapper.getBlockPosition())));
+				}
+			}
+
 			float relativeX = cursor.getX();
 			// negated so NaN falls out too. leave those untouched, the server rejects them as an ordinary bad cursor
 			if (!(relativeX >= PROTOCOL_CURSOR_THRESHOLD && relativeX < PROTOCOL_CURSOR_LIMIT)) {
@@ -273,10 +294,14 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 
 			int rawValue = (int) relativeX - 2;
 
-			User user = event.getUser();
-			UUID uuid = user != null ? user.getUUID() : null;
 			if (uuid != null) {
-				playerPacketDataHashMap.put(uuid, new PacketData(wrapper.getBlockPosition(), rawValue));
+				Deque<PacketData> pending = playerPacketDataHashMap.computeIfAbsent(uuid,
+						key -> new ConcurrentLinkedDeque<>());
+				pending.addLast(new PacketData(wrapper.getBlockPosition(), wrapper.getFace(), rawValue,
+						placementSequence.getAndIncrement(), System.nanoTime()));
+				while (pending.size() > MAX_PENDING_PLACEMENTS) {
+					pending.pollFirst();
+				}
 			}
 
 			wrapper.setCursorPosition(new Vector3f(0.5f, cursor.getY(), cursor.getZ()));
@@ -295,27 +320,29 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	public void onBuildEvent(BlockPlaceEvent event) {
 		Player player = event.getPlayer();
 		UUID uuid = player.getUniqueId();
-		PacketData packetData = playerPacketDataHashMap.get(uuid);
+		Deque<PacketData> pending = playerPacketDataHashMap.get(uuid);
+
+		if (pending == null || pending.isEmpty()) {
+			return;
+		}
+
+		Block block = event.getBlock();
+		long now = System.nanoTime();
+		PacketData packetData = null;
+		for (PacketData data : pending) {
+			if (now - data.receivedNanos() <= PENDING_PLACEMENT_TTL_NANOS && placesAt(data, block, event.getBlockAgainst())) {
+				packetData = data;
+				break;
+			}
+		}
 
 		if (packetData == null) {
 			return;
 		}
 
-		Vector3i packetBlock = packetData.block();
-		Block block = event.getBlock();
-		Block clickedBlock = event.getBlockAgainst();
-
-		boolean positionMatches = (packetBlock.getX() == block.getX() && packetBlock.getY() == block.getY()
-				&& packetBlock.getZ() == block.getZ()) ||
-				(packetBlock.getX() == clickedBlock.getX() && packetBlock.getY() == clickedBlock.getY()
-						&& packetBlock.getZ() == clickedBlock.getZ());
-
-		if (!positionMatches) {
-			debug("Position mismatch: packet=" + packetBlock + " placed=" + block.getLocation() + " clicked="
-					+ clickedBlock.getLocation());
-			playerPacketDataHashMap.remove(uuid);
-			return;
-		}
+		// packets are handled in the order they arrived, so anything queued before this one never made an event
+		final long sequence = packetData.sequence();
+		pending.removeIf(data -> data.sequence() <= sequence);
 
 		int rawValue = packetData.rawValue();
 
@@ -328,7 +355,18 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			// v2: payload = facing*2 + extras, so halve it back for the legacy decoder
 			accurateBlockProtocol(event, rawValue >>> 1);
 		}
-		playerPacketDataHashMap.remove(uuid);
+	}
+
+	// a click lands the block on the clicked face of the clicked block, or on the clicked block itself when that gets replaced
+	private static boolean placesAt(PacketData data, Block block, Block clickedBlock) {
+		Vector3i clicked = data.block();
+		if (clickedBlock.getX() != clicked.getX() || clickedBlock.getY() != clicked.getY() || clickedBlock.getZ() != clicked.getZ()) {
+			return false;
+		}
+		return block.equals(clickedBlock)
+				|| (block.getX() == clicked.getX() + data.face().getModX()
+						&& block.getY() == clicked.getY() + data.face().getModY()
+						&& block.getZ() == clicked.getZ() + data.face().getModZ());
 	}
 
 	private void applyV3(BlockPlaceEvent event, int rawValue) {
