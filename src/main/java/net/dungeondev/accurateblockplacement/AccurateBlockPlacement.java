@@ -12,6 +12,9 @@ import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPluginMessage;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage;
+import io.papermc.paper.command.brigadier.BasicCommand;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.bukkit.Axis;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -26,7 +29,6 @@ import org.bukkit.block.data.type.Chest;
 import org.bukkit.block.data.type.Comparator;
 import org.bukkit.block.data.type.Repeater;
 import org.bukkit.block.data.type.Stairs;
-import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
@@ -39,6 +41,8 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -92,6 +96,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		getLogger().info("PaperAccurateBlockPlacement loaded! Protocol: " + (useV3 ? "v3" : "v2"));
 
 		getServer().getPluginManager().registerEvents(this, this);
+		registerCommand();
 	}
 
 	private void loadSettings() {
@@ -130,27 +135,35 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		PacketEvents.getAPI().getEventManager().unregisterListener(packetListener);
 	}
 
-	@Override
-	public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label,
-			@NotNull String[] args) {
-		if (command.getName().equalsIgnoreCase("abp")) {
-			if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
-				if (!sender.hasPermission("accurateblockplacement.reload")) {
-					sender.sendMessage("<red>You don't have permission to reload the config!</red>");
-					return true;
-				}
+	private void registerCommand() {
+		// paper-plugin.yml has no commands section, so /abp has to be registered through the lifecycle
+		getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS,
+				event -> event.registrar().register("abp", "PaperAccurateBlockPlacement commands", new BasicCommand() {
+					@Override
+					public void execute(@NotNull CommandSourceStack stack, @NotNull String[] args) {
+						CommandSender sender = stack.getSender();
+						if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+							if (!sender.hasPermission("accurateblockplacement.reload")) {
+								sender.sendRichMessage("<red>You don't have permission to reload the config!</red>");
+								return;
+							}
 
-				reloadConfig();
-				config = getConfig();
-				loadSettings();
-				sender.sendMessage("<green>PaperAccurateBlockPlacement config reloaded</green>");
-				return true;
-			}
+							reloadConfig();
+							config = getConfig();
+							loadSettings();
+							sender.sendRichMessage("<green>PaperAccurateBlockPlacement config reloaded</green>");
+							return;
+						}
 
-			sender.sendMessage("PaperAccurateBlockPlacement v" + getPluginMeta().getVersion());
-			return true;
-		}
-		return false;
+						sender.sendMessage("PaperAccurateBlockPlacement v" + getPluginMeta().getVersion());
+					}
+
+					@Override
+					public @NotNull Collection<String> suggest(@NotNull CommandSourceStack stack,
+							@NotNull String[] args) {
+						return args.length <= 1 ? List.of("reload") : List.of();
+					}
+				}));
 	}
 
 	private void debug(String message) {
