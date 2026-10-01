@@ -64,7 +64,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	private volatile boolean toggleOpen;
 	private volatile boolean toggleMulti;
 
-	private V3Protocol v3;
+	private volatile V3Protocol v3;
 
 	private final Map<UUID, PacketData> playerPacketDataHashMap = new ConcurrentHashMap<>();
 
@@ -182,9 +182,10 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 	}
 
 	private void advertiseProtocol(Player player) {
-		long[] delays = { 0L, 20L, 40L, 100L, 200L };
+		long[] delays = { 1L, 20L, 40L, 100L, 200L };
 		for (long delay : delays) {
-			getServer().getScheduler().runTaskLater(this, () -> {
+			// entity scheduler: follows the player between regions on Folia. it rejects a 0 tick delay
+			player.getScheduler().runDelayed(this, task -> {
 				if (!player.isOnline()) {
 					return;
 				}
@@ -199,7 +200,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 					sendCarpetHello(user);
 					sendCarpetRules(user);
 				}
-			}, delay);
+			}, null, delay);
 		}
 	}
 
@@ -335,7 +336,8 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		debug("V3 decode: " + original.getAsString() + " -> " + decoded.getAsString());
 
 		if (block.canPlace(decoded)) {
-			getServer().getScheduler().runTask(this, () -> {
+			// region scheduler: next tick, on the region that owns the block
+			getServer().getRegionScheduler().run(this, block.getLocation(), task -> {
 				if (block.getType() == decoded.getMaterial()) {
 					block.setBlockData(decoded, false);
 				}
@@ -511,7 +513,7 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 		if (canPlace) {
 			// schedule the block update for next tick to bypass Paper's validation
 			final BlockData finalBlockData = blockData;
-			getServer().getScheduler().runTask(this, () -> {
+			getServer().getRegionScheduler().run(this, block.getLocation(), task -> {
 				if (block.getType() == finalBlockData.getMaterial()) {
 					block.setBlockData(finalBlockData, false);
 					debug("Applied scheduled blockdata update");

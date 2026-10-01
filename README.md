@@ -16,7 +16,7 @@ other project [tinker](https://modrinth.com/plugin/tinker)
 ## how it do
 - **version**: check [modrinth](https://modrinth.com/plugin/paper-accurate-block-placement) for all versions, current 
 build is 26.2, and i'm not currently backporting (considering it though as the downloads are picking up!)
-- **server software**: paper, purpur and any other paper derivative ones like pufferfish etc.
+- **server software**: paper, folia, purpur and any other paper derivative ones like pufferfish etc.
 - **[packetevents](https://modrinth.com/plugin/packetevents)**: make sure you pick the compatible version 
 for your mc version, the abp version will work with that (26.2, 26.1 etc.)
 
