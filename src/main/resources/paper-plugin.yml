@@ -8,7 +8,9 @@ folia-supported: true
 dependencies:
   server:
     packetevents:
+      load: BEFORE
       required: true
+      join-classpath: true
 
 commands:
   abp:
