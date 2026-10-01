@@ -134,7 +134,15 @@ final class V3Protocol {
 
 	private void applyFacing(Directional directional, int index, BlockFace playerFacing) {
 		if (index == 6) {
-			directional.setFacing(directional.getFacing().getOppositeFace());
+			// not every block can face the other way (a hopper never faces up), the client keeps the state then
+			BlockFace opposite = directional.getFacing().getOppositeFace();
+			if (directional.getFaces().contains(opposite)) {
+				directional.setFacing(opposite);
+			}
+			return;
+		}
+		// 7 is not a facing, the client leaves the state alone
+		if (index > 6) {
 			return;
 		}
 		BlockFace face = switch (index) {

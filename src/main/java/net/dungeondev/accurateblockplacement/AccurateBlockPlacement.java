@@ -382,8 +382,10 @@ public class AccurateBlockPlacement extends JavaPlugin implements Listener {
 			// 6 for most blocks, >6 for stairs
 			if (facingIndex == 6) {
 				BlockFace newFacing = directional.getFacing().getOppositeFace();
-				directional.setFacing(newFacing);
-				debug("Reversed facing from " + currentFacing + " to " + newFacing);
+				if (directional.getFaces().contains(newFacing)) {
+					directional.setFacing(newFacing);
+					debug("Reversed facing from " + currentFacing + " to " + newFacing);
+				}
 			} else if (facingIndex <= 5) {
 				BlockFace face = null;
 				Set<BlockFace> validFaces = directional.getFaces();
